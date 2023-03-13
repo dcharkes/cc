@@ -4,34 +4,54 @@
 
 import 'dart:io';
 
+import 'package:cc/src/target.dart';
 import 'package:config/config.dart';
 import 'package:native_toolchain/native_toolchain.dart';
 import 'package:task_runner/task_runner.dart';
 
-class CompilerResolver {
+class CompilerResolver implements ToolResolver {
   final Config config;
 
   CompilerResolver({
     required this.config,
   });
 
-  Future<Uri> resolveCompiler({
+  @override
+  Future<List<ToolInstance>> resolve({
     TaskRunner? taskRunner,
   }) async {
-    Uri? result;
-    result ??=
-        await _tryLoadCompilerFromConfig(_configKeyCC, taskRunner: taskRunner);
-    result ??= await _tryLoadCompilerFromConfig(_configKeyNativeToolchainClang,
+    final tool = selectCompiler();
+    ToolInstance? result;
+    result ??= await _tryLoadCompilerFromConfig(tool, _configKeyCC,
+        taskRunner: taskRunner);
+    result ??= await _tryLoadCompilerFromConfig(
+        tool, _configKeyNativeToolchainClang,
         taskRunner: taskRunner);
     result ??=
-        await _tryLoadCompilerFromNativeToolchain(taskRunner: taskRunner);
+        await _tryLoadCompilerFromNativeToolchain(tool, taskRunner: taskRunner);
 
     if (result != null) {
-      return result;
+      return [result];
     }
     const errorMessage = 'No C compiler found.';
     taskRunner?.logger.severe(errorMessage);
     throw Exception(errorMessage);
+  }
+
+  /// Select the right compiler for cross compiling to the specified target.
+  Tool selectCompiler() {
+    final target = config.getString('target') ?? Target.current();
+    switch (target) {
+      case Target.linuxArm:
+        return armLinuxGnueabihfGcc;
+      case Target.linuxArm64:
+        return aarch64LinuxGnuGcc;
+      case Target.linuxIA32:
+        return i686LinuxGnuGcc;
+      case Target.linuxX64:
+        return clang;
+    }
+    throw Exception('No tool available for target: $target.');
   }
 
   /// Provided by launchers.
@@ -40,7 +60,8 @@ class CompilerResolver {
   /// Provided by package:native_toolchain.
   static const _configKeyNativeToolchainClang = 'deps.native_toolchain.clang';
 
-  Future<Uri?> _tryLoadCompilerFromConfig(
+  Future<ToolInstance?> _tryLoadCompilerFromConfig(
+    Tool tool,
     String configKey, {
     TaskRunner? taskRunner,
   }) async {
@@ -49,7 +70,7 @@ class CompilerResolver {
       if (await File.fromUri(configCcUri).exists()) {
         taskRunner?.logger.finer(
             'Using compiler ${configCcUri.path} from config[$_configKeyCC].');
-        return configCcUri;
+        return ToolInstance(tool: tool, uri: configCcUri);
       } else {
         taskRunner?.logger.warning(
             'Compiler ${configCcUri.path} from config[$_configKeyCC] does not exist.');
@@ -59,19 +80,17 @@ class CompilerResolver {
   }
 
   /// If a build is invoked
-  Future<Uri?> _tryLoadCompilerFromNativeToolchain({
+  Future<ToolInstance?> _tryLoadCompilerFromNativeToolchain(
+    Tool tool, {
     TaskRunner? taskRunner,
   }) async {
-    try {
-      final clang = await SystemTools.clang;
+    final resolved = (await tool.defaultResolver!.resolve())..sort();
+    if (resolved.isEmpty) {
       taskRunner?.logger
-          .finer('Using compiler ${clang.path} from package:native_toolchain.');
-      return clang.uri;
-    } catch (e) {
-      taskRunner?.logger
-          .warning('Clang could not be found by package:native_toolchain: $e');
+          .warning('Clang could not be found by package:native_toolchain.');
+      return null;
     }
-    return null;
+    return resolved.first;
   }
 
   Future<Uri> resolveLinker(Uri compiler, {TaskRunner? taskRunner}) async {
@@ -86,3 +105,18 @@ class CompilerResolver {
     throw Exception(errorMessage);
   }
 }
+
+final i686LinuxGnuGcc = Tool(
+  name: 'i686-linux-gnu-gcc',
+  defaultResolver: PathToolResolver(toolName: 'i686-linux-gnu-gcc'),
+);
+
+final armLinuxGnueabihfGcc = Tool(
+  name: 'arm-linux-gnueabihf-gcc',
+  defaultResolver: PathToolResolver(toolName: 'arm-linux-gnueabihf-gcc'),
+);
+
+final aarch64LinuxGnuGcc = Tool(
+  name: 'aarch64-linux-gnu-gcc',
+  defaultResolver: PathToolResolver(toolName: 'aarch64-linux-gnu-gcc'),
+);

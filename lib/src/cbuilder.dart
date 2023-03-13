@@ -43,7 +43,8 @@ class CBuilder implements Task {
       return _compilerCached!;
     }
     final resolver = CompilerResolver(config: config);
-    _compilerCached = await resolver.resolveCompiler(taskRunner: taskRunner);
+    _compilerCached =
+        (await resolver.resolve(taskRunner: taskRunner)).first.uri;
     return _compilerCached!;
   }
 
