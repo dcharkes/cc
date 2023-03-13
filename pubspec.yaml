@@ -15,10 +15,10 @@ dependencies:
       ref: c9a6a3fb1050e2429289f0a98d5b5f97d5b988da
   logging: ^1.1.1
   native_toolchain:
-    # git:
-    #   url: https://github.com/dcharkes/native_toolchain.git
-    #   ref: e480503cd30a8539180e3d8473423bb72444c8fa
-    path: ../native_toolchain
+    git:
+      url: https://github.com/dcharkes/native_toolchain.git
+      ref: 964ebe88e42478c0c6824f2bce7477350c7aa902
+    # path: ../native_toolchain
   task_runner:
     git:
       url: https://github.com/dcharkes/task_runner.git

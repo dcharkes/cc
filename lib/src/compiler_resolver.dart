@@ -50,6 +50,11 @@ class CompilerResolver implements ToolResolver {
         return i686LinuxGnuGcc;
       case Target.linuxX64:
         return clang;
+      case Target.androidArm:
+      case Target.androidArm64:
+      case Target.androidIA32:
+      case Target.androidX64:
+        return androidNdkClang;
     }
     throw Exception('No tool available for target: $target.');
   }
@@ -84,13 +89,16 @@ class CompilerResolver implements ToolResolver {
     Tool tool, {
     TaskRunner? taskRunner,
   }) async {
-    final resolved = (await tool.defaultResolver!.resolve())..sort();
+    final resolved = (await tool.defaultResolver!.resolve())
+        .where((i) => i.tool == tool)
+        .toList()
+      ..sort();
     if (resolved.isEmpty) {
       taskRunner?.logger
           .warning('Clang could not be found by package:native_toolchain.');
       return null;
     }
-    return resolved.first;
+    return resolved.last;
   }
 
   Future<Uri> resolveLinker(Uri compiler, {TaskRunner? taskRunner}) async {

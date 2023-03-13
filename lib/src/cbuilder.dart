@@ -65,19 +65,37 @@ class CBuilder implements Task {
   Future<void> run({TaskRunner? taskRunner}) async {
     final compiler_ = await compiler(taskRunner: taskRunner);
 
-    final task = RunProcess(executable: compiler_.path, arguments: [
-      ...sources.map((e) => e.path),
-      if (executable != null) ...[
-        '-o',
-        outDir.resolveUri(executable!).path,
+    final task = RunProcess(
+      executable: compiler_.path,
+      arguments: [
+        if (target.startsWith('android')) ...[
+          // TODO(dacoharkes): How to solve linking issues?
+          // Workaround:
+          '-nostartfiles',
+          // Non-working fix: --sysroot=$NDKPATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot.
+          // The sysroot should be discovered automatically after NDK 22.
+          '--target=${androidNdkClangTargetFlags[target]!}',
+        ],
+        ...sources.map((e) => e.path),
+        if (executable != null) ...[
+          '-o',
+          outDir.resolveUri(executable!).path,
+        ],
+        if (dynamicLibrary != null) ...[
+          '--shared',
+          '-o',
+          outDir.resolveUri(dynamicLibrary!).path,
+        ],
       ],
-      if (dynamicLibrary != null) ...[
-        '--shared',
-        '-o',
-        outDir.resolveUri(dynamicLibrary!).path,
-      ],
-    ]);
+    );
 
     await task.run(taskRunner: taskRunner);
   }
+
+  static const androidNdkClangTargetFlags = {
+    Target.androidArm: 'armv7a-linux-androideabi',
+    Target.androidArm64: 'aarch64-linux-android',
+    Target.androidIA32: 'i686-linux-android',
+    Target.androidX64: 'x86_64-linux-android',
+  };
 }
