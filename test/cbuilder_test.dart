@@ -22,7 +22,7 @@ void main() {
       if (!await File.fromUri(helloWorldCUri).exists()) {
         throw Exception('Run the test from the root directory.');
       }
-      final executableRelativeUri = Uri(path: 'hello_world');
+      final executableRelativeUri = Uri.file('hello_world');
 
       final config = Config(fileParsed: {
         'out_dir': tempUri.path,
@@ -46,7 +46,7 @@ void main() {
     await inTempDir((tempUri) async {
       final packageUri = Directory.current.uri;
       final addCUri = packageUri.resolve('test/add/src/add.c');
-      final dylibRelativeUri = Uri(path: 'libadd.so');
+      final dylibRelativeUri = Uri.file('libadd.so');
 
       final config = Config(fileParsed: {
         'out_dir': tempUri.path,

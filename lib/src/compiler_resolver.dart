@@ -40,7 +40,7 @@ class CompilerResolver implements ToolResolver {
 
   /// Select the right compiler for cross compiling to the specified target.
   Tool selectCompiler() {
-    final target = config.getString('target') ?? Target.current();
+    final target = config.getOptionalString('target') ?? Target.current();
     switch (target) {
       case Target.linuxArm:
         return armLinuxGnueabihfGcc;
@@ -70,7 +70,7 @@ class CompilerResolver implements ToolResolver {
     String configKey, {
     TaskRunner? taskRunner,
   }) async {
-    final configCcUri = config.getPath(_configKeyCC);
+    final configCcUri = config.getOptionalPath(_configKeyCC);
     if (configCcUri != null) {
       if (await File.fromUri(configCcUri).exists()) {
         taskRunner?.logger.finer(
@@ -112,6 +112,28 @@ class CompilerResolver implements ToolResolver {
     taskRunner?.logger.severe(errorMessage);
     throw Exception(errorMessage);
   }
+
+  Future<Uri> resolveArchiver(Uri compiler, {TaskRunner? taskRunner}) async {
+    final compilerExecutable = compiler.pathSegments.last;
+    if (compilerExecutable == 'clang') {
+      final ar = compiler.resolve('llvm-ar');
+      if (await File.fromUri(ar).exists()) {
+        return ar;
+      }
+    } else if (compilerExecutable.contains('-gcc')) {
+      final ar =
+          compiler.resolve(compilerExecutable.replaceAll('-gcc', '-gcc-ar'));
+      if (await File.fromUri(ar).exists()) {
+        return ar;
+      } else {
+        print(ar);
+      }
+    }
+    final errorMessage =
+        'No native linker found for compiler: $compilerExecutable $compiler.';
+    taskRunner?.logger.severe(errorMessage);
+    throw Exception(errorMessage);
+  }
 }
 
 final i686LinuxGnuGcc = Tool(
@@ -128,3 +150,10 @@ final aarch64LinuxGnuGcc = Tool(
   name: 'aarch64-linux-gnu-gcc',
   defaultResolver: PathToolResolver(toolName: 'aarch64-linux-gnu-gcc'),
 );
+
+final clangLike = [
+  clang,
+  i686LinuxGnuGcc,
+  armLinuxGnueabihfGcc,
+  aarch64LinuxGnuGcc,
+];

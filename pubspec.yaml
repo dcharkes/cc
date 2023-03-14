@@ -12,7 +12,7 @@ dependencies:
   config:
     git:
       url: https://github.com/dcharkes/config.git
-      ref: c9a6a3fb1050e2429289f0a98d5b5f97d5b988da
+      ref: a8059f7e7785a9411d915ac27d175059c822b54d
   logging: ^1.1.1
   native_toolchain:
     git:

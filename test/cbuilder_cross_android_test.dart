@@ -28,35 +28,43 @@ void main() {
     Target.androidX64: 'Advanced Micro Devices X86-64',
   };
 
-  for (final target in targets) {
-    test('Cbuilder dylib linux $target', () async {
-      await inTempDir((tempUri) async {
-        final packageUri = Directory.current.uri;
-        final addCUri = packageUri.resolve('test/add/src/add.c');
-        final dylibRelativeUri = Uri(path: 'libadd.so');
+  for (final packaging in ['dynamic', 'static']) {
+    for (final target in targets) {
+      test('Cbuilder $packaging library $target', () async {
+        await inTempDir((tempUri) async {
+          final packageUri = Directory.current.uri;
+          final addCUri = packageUri.resolve('test/add/src/add.c');
+          final Uri libRelativeUri;
+          if (packaging == 'dynamic') {
+            libRelativeUri = Uri.file('libadd.so');
+          } else {
+            libRelativeUri = Uri.file('libadd.a');
+          }
 
-        final config = Config(fileParsed: {
-          'out_dir': tempUri.path,
-          'target': target,
+          final config = Config(fileParsed: {
+            'out_dir': tempUri.path,
+            'target': target,
+          });
+
+          final cbuilder = CBuilder(
+            config: config,
+            sources: [addCUri],
+            dynamicLibrary: packaging == 'dynamic' ? libRelativeUri : null,
+            staticLibrary: packaging == 'static' ? libRelativeUri : null,
+          );
+          await cbuilder.run(taskRunner: taskRunner);
+
+          final libUri = tempUri.resolveUri(libRelativeUri);
+          final result = await Process.run('readelf', ['-h', libUri.path]);
+          expect(result.exitCode, 0);
+          final machine = (result.stdout as String)
+              .split('\n')
+              .firstWhere((e) => e.contains('Machine:'));
+          expect(machine, contains(readElfMachine[target]));
+          expect(result.exitCode, 0);
         });
-
-        final cbuilder = CBuilder(
-          config: config,
-          sources: [addCUri],
-          dynamicLibrary: dylibRelativeUri,
-        );
-        await cbuilder.run(taskRunner: taskRunner);
-
-        final dylibUri = tempUri.resolveUri(dylibRelativeUri);
-        final result = await Process.run('readelf', ['-h', dylibUri.path]);
-        expect(result.exitCode, 0);
-        final machine = (result.stdout as String)
-            .split('\n')
-            .firstWhere((e) => e.contains('Machine:'));
-        expect(machine, contains(readElfMachine[target]));
-        expect(result.exitCode, 0);
       });
-    });
+    }
   }
 }
 

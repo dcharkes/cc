@@ -25,14 +25,11 @@ class CBuilder implements Task {
     this.dynamicLibrary,
     this.staticLibrary,
   })  : outDir = config.getPath('out_dir')!,
-        target = config.getString('target') ?? Target.current() {
+        target = config.getOptionalString('target') ?? Target.current() {
     if ([executable, dynamicLibrary, staticLibrary].whereType<Uri>().length !=
         1) {
       throw ArgumentError(
           'Provide one of executable, dynamicLibrary, or staticLibrary.');
-    }
-    if (staticLibrary != null) {
-      UnimplementedError();
     }
   }
 
@@ -46,6 +43,19 @@ class CBuilder implements Task {
     _compilerCached =
         (await resolver.resolve(taskRunner: taskRunner)).first.uri;
     return _compilerCached!;
+  }
+
+  Uri? _archiverCached;
+
+  Future<Uri> archiver({TaskRunner? taskRunner}) async {
+    if (_archiverCached != null) {
+      return _archiverCached!;
+    }
+    final compiler_ = await compiler(taskRunner: taskRunner);
+    final resolver = CompilerResolver(config: config);
+    _linkerCached =
+        await resolver.resolveArchiver(compiler_, taskRunner: taskRunner);
+    return _linkerCached!;
   }
 
   Uri? _linkerCached;
@@ -64,30 +74,50 @@ class CBuilder implements Task {
   @override
   Future<void> run({TaskRunner? taskRunner}) async {
     final compiler_ = await compiler(taskRunner: taskRunner);
+    final isStaticLib = staticLibrary != null;
+    Uri? archiver_;
+    if (isStaticLib) {
+      archiver_ = await archiver(taskRunner: taskRunner);
+    }
 
-    final task = RunProcess(
-      executable: compiler_.path,
-      arguments: [
-        if (target.startsWith('android')) ...[
-          // TODO(dacoharkes): How to solve linking issues?
-          // Workaround:
-          '-nostartfiles',
-          // Non-working fix: --sysroot=$NDKPATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot.
-          // The sysroot should be discovered automatically after NDK 22.
-          '--target=${androidNdkClangTargetFlags[target]!}',
+    final task = Task.serial([
+      RunProcess(
+        executable: compiler_.path,
+        arguments: [
+          if (target.startsWith('android')) ...[
+            // TODO(dacoharkes): How to solve linking issues?
+            // Workaround:
+            '-nostartfiles',
+            // Non-working fix: --sysroot=$NDKPATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot.
+            // The sysroot should be discovered automatically after NDK 22.
+            '--target=${androidNdkClangTargetFlags[target]!}',
+          ],
+          ...sources.map((e) => e.path),
+          if (executable != null) ...[
+            '-o',
+            outDir.resolveUri(executable!).path,
+          ],
+          if (dynamicLibrary != null) ...[
+            '--shared',
+            '-o',
+            outDir.resolveUri(dynamicLibrary!).path,
+          ] else if (staticLibrary != null) ...[
+            '-c',
+            '-o',
+            outDir.resolve('out.o').path,
+          ],
         ],
-        ...sources.map((e) => e.path),
-        if (executable != null) ...[
-          '-o',
-          outDir.resolveUri(executable!).path,
-        ],
-        if (dynamicLibrary != null) ...[
-          '--shared',
-          '-o',
-          outDir.resolveUri(dynamicLibrary!).path,
-        ],
-      ],
-    );
+      ),
+      if (staticLibrary != null)
+        RunProcess(
+          executable: archiver_!.path,
+          arguments: [
+            'rc',
+            outDir.resolveUri(staticLibrary!).path,
+            outDir.resolve('out.o').path,
+          ],
+        ),
+    ]);
 
     await task.run(taskRunner: taskRunner);
   }
