@@ -8,11 +8,10 @@ import 'dart:io';
 import 'package:cc/cc.dart';
 import 'package:config/config.dart';
 import 'package:logging/logging.dart';
-import 'package:task_runner/task_runner.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final taskRunner = TaskRunner(logLevel: Level.ALL);
+  final logger = Logger('')..level = Level.ALL;
 
   test('Cbuilder executable', () async {
     await inTempDir((tempUri) async {
@@ -29,10 +28,11 @@ void main() {
       });
       final cbuilder = CBuilder(
         config: config,
+        logger: logger,
         sources: [helloWorldCUri],
         executable: executableRelativeUri,
       );
-      await cbuilder.run(taskRunner: taskRunner);
+      await cbuilder.run();
 
       final executableUri = tempUri.resolveUri(executableRelativeUri);
       expect(await File.fromUri(executableUri).exists(), true);
@@ -54,10 +54,11 @@ void main() {
 
       final cbuilder = CBuilder(
         config: config,
+        logger: logger,
         sources: [addCUri],
         dynamicLibrary: dylibRelativeUri,
       );
-      await cbuilder.run(taskRunner: taskRunner);
+      await cbuilder.run();
 
       final dylibUri = tempUri.resolveUri(dylibRelativeUri);
       final dylib = DynamicLibrary.open(dylibUri.path);

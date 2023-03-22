@@ -5,10 +5,13 @@
 import 'package:cc/src/compiler_resolver.dart';
 import 'package:cc/src/target.dart';
 import 'package:config/config.dart';
-import 'package:task_runner/task_runner.dart';
+import 'package:logging/logging.dart';
 
-class CBuilder implements Task {
+import 'util/run_process.dart';
+
+class CBuilder {
   final Config config;
+  final Logger logger;
   final List<Uri> sources;
   final List<Uri> includePaths;
   final Uri? executable;
@@ -19,12 +22,13 @@ class CBuilder implements Task {
 
   CBuilder({
     required this.config,
+    required this.logger,
     this.sources = const [],
     this.includePaths = const [],
     this.executable,
     this.dynamicLibrary,
     this.staticLibrary,
-  })  : outDir = config.getPath('out_dir')!,
+  })  : outDir = config.getPath('out_dir'),
         target = config.getOptionalString('target') ?? Target.current() {
     if ([executable, dynamicLibrary, staticLibrary].whereType<Uri>().length !=
         1) {
@@ -35,91 +39,88 @@ class CBuilder implements Task {
 
   Uri? _compilerCached;
 
-  Future<Uri> compiler({TaskRunner? taskRunner}) async {
+  Future<Uri> compiler() async {
     if (_compilerCached != null) {
       return _compilerCached!;
     }
-    final resolver = CompilerResolver(config: config);
-    _compilerCached =
-        (await resolver.resolve(taskRunner: taskRunner)).first.uri;
+    final resolver = CompilerResolver(config: config, logger: logger);
+    _compilerCached = (await resolver.resolve()).first.uri;
     return _compilerCached!;
   }
 
   Uri? _archiverCached;
 
-  Future<Uri> archiver({TaskRunner? taskRunner}) async {
+  Future<Uri> archiver() async {
     if (_archiverCached != null) {
       return _archiverCached!;
     }
-    final compiler_ = await compiler(taskRunner: taskRunner);
-    final resolver = CompilerResolver(config: config);
-    _linkerCached =
-        await resolver.resolveArchiver(compiler_, taskRunner: taskRunner);
+    final compiler_ = await compiler();
+    final resolver = CompilerResolver(config: config, logger: logger);
+    _linkerCached = await resolver.resolveArchiver(
+      compiler_,
+    );
     return _linkerCached!;
   }
 
   Uri? _linkerCached;
 
-  Future<Uri> linker({TaskRunner? taskRunner}) async {
+  Future<Uri> linker() async {
     if (_linkerCached != null) {
       return _linkerCached!;
     }
-    final compiler_ = await compiler(taskRunner: taskRunner);
-    final resolver = CompilerResolver(config: config);
-    _linkerCached =
-        await resolver.resolveLinker(compiler_, taskRunner: taskRunner);
+    final compiler_ = await compiler();
+    final resolver = CompilerResolver(config: config, logger: logger);
+    _linkerCached = await resolver.resolveLinker(
+      compiler_,
+    );
     return _linkerCached!;
   }
 
-  @override
-  Future<void> run({TaskRunner? taskRunner}) async {
-    final compiler_ = await compiler(taskRunner: taskRunner);
+  Future<void> run() async {
+    final compiler_ = await compiler();
     final isStaticLib = staticLibrary != null;
     Uri? archiver_;
     if (isStaticLib) {
-      archiver_ = await archiver(taskRunner: taskRunner);
+      archiver_ = await archiver();
     }
 
-    final task = Task.serial([
-      RunProcess(
-        executable: compiler_.path,
-        arguments: [
-          if (target.startsWith('android')) ...[
-            // TODO(dacoharkes): How to solve linking issues?
-            // Workaround:
-            '-nostartfiles',
-            // Non-working fix: --sysroot=$NDKPATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot.
-            // The sysroot should be discovered automatically after NDK 22.
-            '--target=${androidNdkClangTargetFlags[target]!}',
-          ],
-          ...sources.map((e) => e.path),
-          if (executable != null) ...[
-            '-o',
-            outDir.resolveUri(executable!).path,
-          ],
-          if (dynamicLibrary != null) ...[
-            '--shared',
-            '-o',
-            outDir.resolveUri(dynamicLibrary!).path,
-          ] else if (staticLibrary != null) ...[
-            '-c',
-            '-o',
-            outDir.resolve('out.o').path,
-          ],
+    await RunProcess(
+      executable: compiler_.path,
+      arguments: [
+        if (target.startsWith('android')) ...[
+          // TODO(dacoharkes): How to solve linking issues?
+          // Workaround:
+          '-nostartfiles',
+          // Non-working fix: --sysroot=$NDKPATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot.
+          // The sysroot should be discovered automatically after NDK 22.
+          '--target=${androidNdkClangTargetFlags[target]!}',
         ],
-      ),
-      if (staticLibrary != null)
-        RunProcess(
-          executable: archiver_!.path,
-          arguments: [
-            'rc',
-            outDir.resolveUri(staticLibrary!).path,
-            outDir.resolve('out.o').path,
-          ],
-        ),
-    ]);
-
-    await task.run(taskRunner: taskRunner);
+        ...sources.map((e) => e.path),
+        if (executable != null) ...[
+          '-o',
+          outDir.resolveUri(executable!).path,
+        ],
+        if (dynamicLibrary != null) ...[
+          '--shared',
+          '-o',
+          outDir.resolveUri(dynamicLibrary!).path,
+        ] else if (staticLibrary != null) ...[
+          '-c',
+          '-o',
+          outDir.resolve('out.o').path,
+        ],
+      ],
+    ).run(logger: logger);
+    if (staticLibrary != null) {
+      await RunProcess(
+        executable: archiver_!.path,
+        arguments: [
+          'rc',
+          outDir.resolveUri(staticLibrary!).path,
+          outDir.resolve('out.o').path,
+        ],
+      ).run(logger: logger);
+    }
   }
 
   static const androidNdkClangTargetFlags = {

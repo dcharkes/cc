@@ -6,35 +6,36 @@ import 'dart:io';
 
 import 'package:cc/src/target.dart';
 import 'package:config/config.dart';
+import 'package:logging/logging.dart';
 import 'package:native_toolchain/native_toolchain.dart';
-import 'package:task_runner/task_runner.dart';
 
 class CompilerResolver implements ToolResolver {
   final Config config;
+  final Logger? logger;
 
   CompilerResolver({
     required this.config,
+    required this.logger,
   });
 
   @override
-  Future<List<ToolInstance>> resolve({
-    TaskRunner? taskRunner,
-  }) async {
+  Future<List<ToolInstance>> resolve() async {
     final tool = selectCompiler();
     ToolInstance? result;
-    result ??= await _tryLoadCompilerFromConfig(tool, _configKeyCC,
-        taskRunner: taskRunner);
+    result ??= await _tryLoadCompilerFromConfig(tool, _configKeyCC);
     result ??= await _tryLoadCompilerFromConfig(
-        tool, _configKeyNativeToolchainClang,
-        taskRunner: taskRunner);
-    result ??=
-        await _tryLoadCompilerFromNativeToolchain(tool, taskRunner: taskRunner);
+      tool,
+      _configKeyNativeToolchainClang,
+    );
+    result ??= await _tryLoadCompilerFromNativeToolchain(
+      tool,
+    );
 
     if (result != null) {
       return [result];
     }
     const errorMessage = 'No C compiler found.';
-    taskRunner?.logger.severe(errorMessage);
+    logger?.severe(errorMessage);
     throw Exception(errorMessage);
   }
 
@@ -66,18 +67,15 @@ class CompilerResolver implements ToolResolver {
   static const _configKeyNativeToolchainClang = 'deps.native_toolchain.clang';
 
   Future<ToolInstance?> _tryLoadCompilerFromConfig(
-    Tool tool,
-    String configKey, {
-    TaskRunner? taskRunner,
-  }) async {
+      Tool tool, String configKey) async {
     final configCcUri = config.getOptionalPath(_configKeyCC);
     if (configCcUri != null) {
       if (await File.fromUri(configCcUri).exists()) {
-        taskRunner?.logger.finer(
+        logger?.finer(
             'Using compiler ${configCcUri.path} from config[$_configKeyCC].');
         return ToolInstance(tool: tool, uri: configCcUri);
       } else {
-        taskRunner?.logger.warning(
+        logger?.warning(
             'Compiler ${configCcUri.path} from config[$_configKeyCC] does not exist.');
       }
     }
@@ -85,23 +83,21 @@ class CompilerResolver implements ToolResolver {
   }
 
   /// If a build is invoked
-  Future<ToolInstance?> _tryLoadCompilerFromNativeToolchain(
-    Tool tool, {
-    TaskRunner? taskRunner,
-  }) async {
+  Future<ToolInstance?> _tryLoadCompilerFromNativeToolchain(Tool tool) async {
     final resolved = (await tool.defaultResolver!.resolve())
         .where((i) => i.tool == tool)
         .toList()
       ..sort();
     if (resolved.isEmpty) {
-      taskRunner?.logger
-          .warning('Clang could not be found by package:native_toolchain.');
+      logger?.warning('Clang could not be found by package:native_toolchain.');
       return null;
     }
     return resolved.last;
   }
 
-  Future<Uri> resolveLinker(Uri compiler, {TaskRunner? taskRunner}) async {
+  Future<Uri> resolveLinker(
+    Uri compiler,
+  ) async {
     if (compiler.pathSegments.last == 'clang') {
       final lld = compiler.resolve('lld');
       if (await File.fromUri(lld).exists()) {
@@ -109,11 +105,13 @@ class CompilerResolver implements ToolResolver {
       }
     }
     const errorMessage = 'No native linker found.';
-    taskRunner?.logger.severe(errorMessage);
+    logger?.severe(errorMessage);
     throw Exception(errorMessage);
   }
 
-  Future<Uri> resolveArchiver(Uri compiler, {TaskRunner? taskRunner}) async {
+  Future<Uri> resolveArchiver(
+    Uri compiler,
+  ) async {
     final compilerExecutable = compiler.pathSegments.last;
     if (compilerExecutable == 'clang') {
       final ar = compiler.resolve('llvm-ar');
@@ -131,7 +129,7 @@ class CompilerResolver implements ToolResolver {
     }
     final errorMessage =
         'No native linker found for compiler: $compilerExecutable $compiler.';
-    taskRunner?.logger.severe(errorMessage);
+    logger?.severe(errorMessage);
     throw Exception(errorMessage);
   }
 }

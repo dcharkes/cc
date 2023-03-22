@@ -8,11 +8,10 @@ import 'package:cc/cc.dart';
 import 'package:cc/src/target.dart';
 import 'package:config/config.dart';
 import 'package:logging/logging.dart';
-import 'package:task_runner/task_runner.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final taskRunner = TaskRunner(logLevel: Level.ALL);
+  final logger = Logger('')..level = Level.ALL;
 
   const targets = [
     Target.androidArm,
@@ -48,11 +47,12 @@ void main() {
 
           final cbuilder = CBuilder(
             config: config,
+            logger: logger,
             sources: [addCUri],
             dynamicLibrary: packaging == 'dynamic' ? libRelativeUri : null,
             staticLibrary: packaging == 'static' ? libRelativeUri : null,
           );
-          await cbuilder.run(taskRunner: taskRunner);
+          await cbuilder.run();
 
           final libUri = tempUri.resolveUri(libRelativeUri);
           final result = await Process.run('readelf', ['-h', libUri.path]);
